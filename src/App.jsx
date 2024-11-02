@@ -1,53 +1,58 @@
-import WorkerDashboard from './components/WorkerDashboard'
-
-// Sample data for testing
-const sampleWorkers = [
-  {
-    "Name": "Thomas",
-    "WorkerID": "",
-    "Phone": "0616594119",
-    "InternalWorkerID": "88929b93-a488-4ab4-b286-4ea7fa3e767c"
-  },
-  {
-    "Name": "Amy",
-    "WorkerID": "1234567890",
-    "Phone": "147852369",
-    "InternalWorkerID": "f99bf868-6abf-4c5a-95e6-5f65bdf5f19b"
-  }
-];
-
-const sampleActivities = [
-  {
-    "InternalWorkerID": "88929b93-a488-4ab4-b286-4ea7fa3e767c",
-    "Activities": {
-      "2024-10-28T00:00:00+07:00": {
-        "TotalWorkHours": "08:32:45",
-        "TotalNormalPay": 373.89,
-        "TotalOTPay": 0
-      },
-      "2024-10-29T00:00:00+07:00": {
-        "TotalWorkHours": "08:45:00",
-        "TotalNormalPay": 382.50,
-        "TotalOTPay": 50
-      },
-      "2024-10-30T00:00:00+07:00": {
-        "TotalWorkHours": "09:15:00",
-        "TotalNormalPay": 404.75,
-        "TotalOTPay": 75
-      }
-    }
-  }
-];
+import { useState } from 'react';
+import './App.css';
+import WorkerDashboard from './components/WorkerDashboard';
+import DashboardNav from './components/DashboardNav';
+import Login from './components/Login';
 
 function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [user, setUser] = useState(null);
+  const [currentView, setCurrentView] = useState('active'); // 'overview', 'individual', or 'payroll'
+
+  const handleLogin = (username) => {
+    setIsAuthenticated(true);
+    setUser(username);
+  };
+
+  const handleLogout = () => {
+    setIsAuthenticated(false);
+    setUser(null);
+  };
+
   return (
-    <div className="min-h-screen bg-gray-100">
-      <WorkerDashboard 
-        workers={sampleWorkers}
-        activities={sampleActivities}
-      />
+    <div className="App">
+      {!isAuthenticated ? (
+        <Login onLogin={handleLogin} />
+      ) : (
+        <div>
+          <div className="bg-white shadow">
+            <div className="max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8 flex justify-between items-center">
+              <h1 className="text-xl font-semibold">Worker Stats Dashboard</h1>
+              <div className="flex items-center gap-4">
+                <span className="text-gray-600">Welcome, {user}</span>
+                <button
+                  onClick={handleLogout}
+                  className="px-3 py-1 text-sm text-red-600 hover:text-red-800"
+                >
+                  Logout
+                </button>
+              </div>
+            </div>
+          </div>
+          
+          <DashboardNav 
+            onViewChange={setCurrentView}
+            currentView={currentView}
+          />
+          
+          {/* Pass the current view to WorkerDashboard */}
+          <WorkerDashboard 
+            view={currentView}
+          />
+        </div>
+      )}
     </div>
-  )
+  );
 }
 
-export default App
+export default App;
