@@ -2,7 +2,6 @@
 import axios from 'axios';
 import https from 'https';
 
-/* eslint-env node */
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -20,13 +19,12 @@ export default async function handler(req, res) {
   }
 
   try {
-    const folderUrl = 'https://NewwaysNAS.myqnapcloud.com/share.cgi?ssid=0X8oWMk';
+    const baseUrl = 'https://NewwaysNAS.myqnapcloud.com/share.cgi?ssid=0X8oWMk';
 
-    // Get the folder contents
-    const folderResponse = await axios.get(folderUrl, {
+    // Fetch the contents of the shared folder
+    const folderResponse = await axios.get(baseUrl, {
       headers: {
         Accept: 'application/json',
-        'Cache-Control': 'no-cache',
       },
       httpsAgent: new https.Agent({
         rejectUnauthorized: false,
@@ -34,22 +32,47 @@ export default async function handler(req, res) {
       timeout: 10000,
     });
 
-    // Get all JSON files from the folder
-    const files = Array.isArray(folderResponse.data.files)
-      ? folderResponse.data.files
-      : [];
+    // Find the 'Office' subfolder
+    const subfolders = folderResponse.data.folders || [];
+    const officeFolder = subfolders.find(
+      (folder) => folder.name === 'Office'
+    );
+
+    if (!officeFolder) {
+      return res.status(404).json({ error: 'Office folder not found' });
+    }
+
+    // Build the URL to the 'Office' subfolder
+    const officeFolderUrl = `${baseUrl}&path=${encodeURIComponent(
+      officeFolder.path
+    )}`;
+
+    // Fetch the contents of the 'Office' folder
+    const officeFolderResponse = await axios.get(officeFolderUrl, {
+      headers: {
+        Accept: 'application/json',
+      },
+      httpsAgent: new https.Agent({
+        rejectUnauthorized: false,
+      }),
+      timeout: 10000,
+    });
+
+    // Get all JSON files from the 'Office' folder
+    const files = officeFolderResponse.data.files || [];
     const jsonFiles = files.filter((file) => file.name.endsWith('.json'));
 
     // Fetch each activity file
     const activities = await Promise.all(
       jsonFiles.map(async (file) => {
-        const fileUrl = `${folderUrl}&fname=${encodeURIComponent(file.name)}`;
+        const fileUrl = `${officeFolderUrl}&fname=${encodeURIComponent(
+          file.name
+        )}`;
 
         try {
           const fileResponse = await axios.get(fileUrl, {
             headers: {
               Accept: 'application/json',
-              'Cache-Control': 'no-cache',
             },
             httpsAgent: new https.Agent({
               rejectUnauthorized: false,
@@ -81,10 +104,12 @@ export default async function handler(req, res) {
     console.error('Error fetching activities:', {
       message: error.message,
       code: error.code,
-      response: error.response ? {
-        status: error.response.status,
-        data: error.response.data,
-      } : null,
+      response: error.response
+        ? {
+            status: error.response.status,
+            data: error.response.data,
+          }
+        : null,
     });
 
     return res.status(500).json({
