@@ -1,81 +1,91 @@
-/* eslint-disable no-undef */
 import axios from 'axios';
 import https from 'https';
+import process from 'process';
 
 export default async function handler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
   try {
-    const qnapUrl = `https://${process.env.QNAP_SERVER_URL}`;
-    const activitiesPath = process.env.ACTIVITIES_FOLDER_PATH;
-    
-    console.log('Attempting connection to:', {
-      url: qnapUrl,
-      path: activitiesPath,
-      fullUrl: `${qnapUrl}${activitiesPath}`,
-      hasUsername: !!process.env.QNAP_USERNAME,
-      hasPassword: !!process.env.QNAP_PASSWORD
-    });
+    const folderUrl = process.env.ACTIVITIES_SHARE_URL;
+    if (!folderUrl) {
+      throw new Error('Activities share URL not configured');
+    }
 
-    // First, try to list the contents of the activities folder
-    const folderResponse = await axios.get(`${qnapUrl}${activitiesPath}`, {
+    console.log('Attempting to access activities folder');
+
+    // Get the folder contents
+    const folderResponse = await axios.get(folderUrl, {
       headers: {
         'Accept': 'application/json',
-      },
-      auth: {
-        username: process.env.QNAP_USERNAME,
-        password: process.env.QNAP_PASSWORD
+        'Cache-Control': 'no-cache'
       },
       httpsAgent: new https.Agent({
         rejectUnauthorized: false
       }),
-      timeout: 5000
+      timeout: 10000
     });
 
-    console.log('Folder contents:', folderResponse.data);
+    console.log('Folder contents received');
 
-    // Assuming each file in the folder is a JSON file for a worker
-    const activities = Array.isArray(folderResponse.data) ? folderResponse.data : [];
-    
-    // Process the activities into a map
+    // Get all JSON files from the folder
+    const files = Array.isArray(folderResponse.data.files) ? folderResponse.data.files : [];
+    const jsonFiles = files.filter(file => file.name.endsWith('.json'));
+
+    console.log('Found JSON files:', jsonFiles.length);
+
+    // Fetch each activity file
+    const activities = await Promise.all(
+      jsonFiles.map(async (file) => {
+        const fileUrl = `${folderUrl}&fname=${encodeURIComponent(file.name)}`;
+        console.log(`Fetching activity file: ${file.name}`); // Log filename instead of full URL
+        
+        const fileResponse = await axios.get(fileUrl, {
+          headers: {
+            'Accept': 'application/json',
+            'Cache-Control': 'no-cache'
+          },
+          httpsAgent: new https.Agent({
+            rejectUnauthorized: false
+          })
+        });
+        
+        return fileResponse.data;
+      })
+    );
+
+    // Create activities map
     const activitiesMap = {};
-    for (const activity of activities) {
+    activities.forEach(activity => {
       if (activity.InternalWorkerID) {
         activitiesMap[activity.InternalWorkerID] = activity;
       }
-    }
+    });
 
-    console.log('Successfully processed activities:', {
-      totalActivities: activities.length,
+    console.log('Processed activities:', {
+      totalFiles: activities.length,
       mappedWorkers: Object.keys(activitiesMap).length
     });
 
     return res.status(200).json(activitiesMap);
   } catch (error) {
-    console.error('Connection error details:', {
+    console.error('Activities fetch error:', {
       message: error.message,
-      code: error.code,
-      response: {
-        status: error.response?.status,
-        statusText: error.response?.statusText,
-        data: error.response?.data,
-        headers: error.response?.headers
-      },
+      status: error.response?.status,
       config: {
-        url: error.config?.url,
-        method: error.config?.method,
-        headers: error.config?.headers
+        method: error.config?.method
       }
     });
 
-    return res.status(500).json({ 
-      error: error.message,
-      details: {
-        code: error.code,
-        status: error.response?.status
-      }
-    });
+    return res.status(500).json({ error: error.message });
   }
 }

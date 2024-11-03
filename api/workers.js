@@ -1,68 +1,78 @@
-/* eslint-disable no-undef */
+// api/workers.js
 import axios from 'axios';
 import https from 'https';
+import process from 'process';
 
 export default async function handler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
   try {
-    const qnapUrl = `https://${process.env.QNAP_SERVER_URL}`;
-    const workersPath = process.env.WORKERS_FILE_PATH;
-    
-    console.log('Attempting connection to:', {
-      url: qnapUrl,
-      path: workersPath,
-      fullUrl: `${qnapUrl}${workersPath}`,
-      hasUsername: !!process.env.QNAP_USERNAME,
-      hasPassword: !!process.env.QNAP_PASSWORD
-    });
+    const folderUrl = process.env.WORKERS_SHARE_URL;  // Now we're actually using process
+    if (!folderUrl) {
+      throw new Error('Workers share URL not configured');
+    }
 
-    const response = await axios.get(`${qnapUrl}${workersPath}`, {
+    console.log('Attempting to access workers folder');
+
+    // First get the folder contents
+    const folderResponse = await axios.get(folderUrl, {
       headers: {
         'Accept': 'application/json',
-      },
-      auth: {
-        username: process.env.QNAP_USERNAME,
-        password: process.env.QNAP_PASSWORD
+        'Cache-Control': 'no-cache'
       },
       httpsAgent: new https.Agent({
         rejectUnauthorized: false
       }),
-      timeout: 5000 // 5 second timeout
+      timeout: 10000
     });
 
-    console.log('Connection successful:', {
-      status: response.status,
-      contentType: response.headers['content-type'],
-      dataLength: response.data ? JSON.stringify(response.data).length : 0
+    console.log('Folder response:', {
+      status: folderResponse.status,
+      data: folderResponse.data
     });
 
-    return res.status(200).json(response.data);
-  } catch (error) {
-    console.error('Connection error details:', {
-      message: error.message,
-      code: error.code,
-      response: {
-        status: error.response?.status,
-        statusText: error.response?.statusText,
-        data: error.response?.data,
-        headers: error.response?.headers
+    // Get workers.json file
+    const workersFileUrl = `${folderUrl}&fname=workers.json`;
+    console.log('Fetching workers file:', workersFileUrl);
+
+    const workersResponse = await axios.get(workersFileUrl, {
+      headers: {
+        'Accept': 'application/json',
+        'Cache-Control': 'no-cache'
       },
+      httpsAgent: new https.Agent({
+        rejectUnauthorized: false
+      }),
+      timeout: 10000
+    });
+
+    console.log('Workers file response:', {
+      status: workersResponse.status,
+      hasData: !!workersResponse.data
+    });
+
+    return res.status(200).json(workersResponse.data);
+  } catch (error) {
+    console.error('Workers fetch error:', {
+      message: error.message,
+      status: error.response?.status,
+      data: error.response?.data,
       config: {
         url: error.config?.url,
-        method: error.config?.method,
-        headers: error.config?.headers
+        method: error.config?.method
       }
     });
 
-    return res.status(500).json({ 
-      error: error.message,
-      details: {
-        code: error.code,
-        status: error.response?.status
-      }
-    });
+    return res.status(500).json({ error: error.message });
   }
 }
