@@ -25,7 +25,7 @@ try {
   console.error('Error reading .env.local:', err);
 }
 
-// Force debug output
+// Force debug output 
 const debugEnv = {
   email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
   hasKey: !!process.env.GOOGLE_PRIVATE_KEY,
